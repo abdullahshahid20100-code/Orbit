@@ -6,6 +6,7 @@ import { store } from '../services/store';
 interface StoryViewerModalProps {
   initialStoryId: string;
   currentUser: User;
+  stories?: Story[];
   onClose: () => void;
   onStoryReplySent?: (recipientId: string, text: string) => void;
 }
@@ -13,10 +14,11 @@ interface StoryViewerModalProps {
 export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
   initialStoryId,
   currentUser,
+  stories: storiesProp,
   onClose,
   onStoryReplySent,
 }) => {
-  const stories = store.getStories();
+  const stories = storiesProp && storiesProp.length > 0 ? storiesProp : store.getStories();
   const [currentIndex, setCurrentIndex] = useState(() => {
     const idx = stories.findIndex((s) => s.id === initialStoryId);
     return idx !== -1 ? idx : 0;
@@ -27,34 +29,49 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
   const [replyStatus, setReplyStatus] = useState<string | null>(null);
   const [showHeartAnim, setShowHeartAnim] = useState(false);
 
-  const currentStory = stories[currentIndex] || stories[0];
+  const currentStory = stories[currentIndex];
   const author = currentStory ? store.getUserById(currentStory.userId) : null;
   const hasLiked = currentStory?.likedBy.includes(currentUser.id) || false;
 
-  const timerRef = useRef<number | null>(null);
-
-  // Story auto-advance timer (5 seconds per story)
+  // Safe fallback if story or author is deleted/missing
   useEffect(() => {
-    if (isPaused) return;
+    if (!currentStory || !author) {
+      onClose();
+    }
+  }, [currentStory, author, onClose]);
+
+  // Reset progress on index change
+  useEffect(() => {
+    setProgress(0);
+  }, [currentIndex]);
+
+  // Story progress timer (5 seconds per story)
+  useEffect(() => {
+    if (isPaused || !currentStory) return;
 
     const step = 50; // ms
     const totalDuration = 5000; // 5s
     const increment = (step / totalDuration) * 100;
 
-    timerRef.current = window.setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          handleNextStory();
-          return 0;
-        }
-        return prev + increment;
-      });
+    const timer = window.setInterval(() => {
+      setProgress((prev) => Math.min(prev + increment, 100));
     }, step);
 
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      clearInterval(timer);
     };
-  }, [currentIndex, isPaused, stories.length]);
+  }, [currentIndex, isPaused, currentStory]);
+
+  // Advance to next story or close when progress reaches 100%
+  useEffect(() => {
+    if (progress >= 100) {
+      if (currentIndex < stories.length - 1) {
+        setCurrentIndex((i) => i + 1);
+      } else {
+        onClose();
+      }
+    }
+  }, [progress, currentIndex, stories.length, onClose]);
 
   const handleNextStory = () => {
     setProgress(0);

@@ -256,6 +256,7 @@ export default function App() {
         <StoryViewerModal
           initialStoryId={activeStoryId}
           currentUser={currentUser}
+          stories={friendStories}
           onClose={() => setActiveStoryId(null)}
           onStoryReplySent={(recipientId) => {
             setActiveChatRecipientId(recipientId);
