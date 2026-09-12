@@ -45,61 +45,8 @@ export const SAMPLE_ASSETS = {
     'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1000&q=80',
 };
 
-// Initial Seed Users
-const INITIAL_USERS: User[] = [
-  {
-    id: 'usr_abdullah',
-    username: 'AbdullahShahid',
-    displayName: 'Abdullah Shahid',
-    avatar: SAMPLE_ASSETS.abdullahPhoto,
-    bio: 'Hi',
-    followersCount: 0,
-    followingCount: 0,
-    postsCount: 1,
-    likesReceived: 2,
-    isVerified: true,
-    createdAt: new Date(Date.now() - 86400000 * 30).toISOString(),
-  },
-  {
-    id: 'usr_shahid',
-    username: 'ShahidIqbal',
-    displayName: 'Shahid Iqbal',
-    avatar: SAMPLE_ASSETS.shahidAvatar,
-    bio: 'Chasing horizons & quiet moments 🌅',
-    followersCount: 1,
-    followingCount: 0,
-    postsCount: 1,
-    likesReceived: 5,
-    isVerified: false,
-    createdAt: new Date(Date.now() - 86400000 * 20).toISOString(),
-  },
-  {
-    id: 'usr_elena',
-    username: 'ElenaRostova',
-    displayName: 'Elena Rostova',
-    avatar: SAMPLE_ASSETS.elenaAvatar,
-    bio: 'Visual designer & 3D space explorer ✨',
-    followersCount: 142,
-    followingCount: 88,
-    postsCount: 2,
-    likesReceived: 340,
-    isVerified: true,
-    createdAt: new Date(Date.now() - 86400000 * 45).toISOString(),
-  },
-  {
-    id: 'usr_marcus',
-    username: 'MarcusV',
-    displayName: 'Marcus Vance',
-    avatar: SAMPLE_ASSETS.marcusAvatar,
-    bio: 'Audio synthesizer & ambient textures 🎧',
-    followersCount: 78,
-    followingCount: 50,
-    postsCount: 1,
-    likesReceived: 112,
-    isVerified: false,
-    createdAt: new Date(Date.now() - 86400000 * 15).toISOString(),
-  },
-];
+// Initial Users: empty by default so ONLY real accounts created by users appear
+const INITIAL_USERS: User[] = [];
 
 // Initial Seed Posts (Matching Abdullah Shahid's ZHAM post in video)
 const INITIAL_POSTS: Post[] = [
@@ -269,6 +216,14 @@ class OrbitStore {
 
   constructor() {
     this.data = this.loadFromStorage();
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', (e) => {
+        if (e.key === STORAGE_KEY) {
+          this.data = this.loadFromStorage();
+          this.notify();
+        }
+      });
+    }
   }
 
   private loadFromStorage(): OrbitStoreData {
@@ -277,6 +232,24 @@ class OrbitStore {
       if (stored) {
         const parsed = JSON.parse(stored);
         if (parsed && Array.isArray(parsed.users)) {
+          // Remove seed dummy accounts (usr_shahid, usr_elena, usr_marcus)
+          // so ONLY REAL user IDs created in Orbit are present!
+          const DUMMY_SEED_IDS = new Set(['usr_shahid', 'usr_elena', 'usr_marcus']);
+          parsed.users = parsed.users.filter((u: User) => {
+            if (u.id === parsed.currentUserId) return true;
+            return !DUMMY_SEED_IDS.has(u.id);
+          });
+
+          // Ensure all posts have visibility, viewsCount, and viewedBy initialized
+          if (Array.isArray(parsed.posts)) {
+            parsed.posts.forEach((p: Post) => {
+              if (!p.visibility) p.visibility = 'everyone';
+              if (p.allowComments === undefined) p.allowComments = true;
+              if (!p.viewedBy) p.viewedBy = [];
+              if (typeof p.viewsCount !== 'number') p.viewsCount = p.viewedBy.length;
+            });
+          }
+
           return parsed;
         }
       }
@@ -284,7 +257,7 @@ class OrbitStore {
       // ignore
     }
 
-    // Clean initial state as requested: "abhi kisi NE Kuch add NAHI kiya is Lia Kuch na show ho"
+    // Clean initial state: no dummy data
     return {
       users: [],
       posts: [],
@@ -317,7 +290,7 @@ class OrbitStore {
   }
 
   public hasAccount(): boolean {
-    return this.data.users.length > 0 && Boolean(this.data.currentUserId);
+    return Boolean(this.data.currentUserId);
   }
 
   public resetToCleanState() {
@@ -460,6 +433,55 @@ class OrbitStore {
 
     this.saveToStorage();
     return { success: true };
+  }
+
+  // --- Change Password Feature ---
+  public changePassword(
+    userId: string,
+    currentPass: string,
+    newPass: string
+  ): { success: boolean; error?: string } {
+    const user = this.data.users.find((u) => u.id === userId);
+    if (!user) return { success: false, error: 'User not found' };
+
+    if (user.password && user.password !== currentPass.trim()) {
+      return { success: false, error: 'Current password does not match' };
+    }
+
+    if (!newPass || newPass.trim().length < 4) {
+      return { success: false, error: 'New password must be at least 4 characters' };
+    }
+
+    user.password = newPass.trim();
+    this.saveToStorage();
+    return { success: true };
+  }
+
+  // --- Robust Search for IDs, Usernames, and Names ---
+  public searchUsers(query: string, excludeUserId?: string): User[] {
+    const raw = query.toLowerCase().trim();
+    if (!raw) {
+      return this.data.users.filter((u) => !excludeUserId || u.id !== excludeUserId);
+    }
+    const clean = raw.replace(/^@/, '');
+    const noSpaces = clean.replace(/\s+/g, '');
+
+    return this.data.users.filter((u) => {
+      if (excludeUserId && u.id === excludeUserId) return false;
+      const uId = u.id.toLowerCase();
+      const uName = u.username.toLowerCase();
+      const dName = u.displayName.toLowerCase();
+      const uBio = (u.bio || '').toLowerCase();
+
+      return (
+        uName.includes(clean) ||
+        uName.includes(noSpaces) ||
+        dName.includes(clean) ||
+        uId.includes(clean) ||
+        uId.replace(/^(usr_)/, '').includes(clean) ||
+        uBio.includes(clean)
+      );
+    });
   }
 
   // --- Permanent Account Deletion with Password Verification ---
@@ -709,16 +731,22 @@ class OrbitStore {
     userId: string;
     mediaUrl: string;
     caption: string;
+    visibility?: 'everyone' | 'friends';
+    allowComments?: boolean;
   }): Post {
     const newPost: Post = {
       id: `post_${Date.now()}`,
       userId: params.userId,
       mediaUrl: params.mediaUrl,
       caption: params.caption,
+      visibility: params.visibility || 'everyone',
+      allowComments: params.allowComments !== false,
       likesCount: 0,
       likedBy: [],
       savedBy: [],
       comments: [],
+      viewsCount: 0,
+      viewedBy: [],
       createdAt: new Date().toISOString(),
     };
 
@@ -729,6 +757,58 @@ class OrbitStore {
     }
     this.saveToStorage();
     return newPost;
+  }
+
+  // Like a post once (idempotent: 1 user = 1 like maximum).
+  // Perfect for double-tap / double-click so tapping repeatedly does not add multiple likes!
+  public likePostOnce(postId: string, userId: string): boolean {
+    const post = this.data.posts.find((p) => p.id === postId);
+    if (!post) return false;
+
+    if (!post.likedBy.includes(userId)) {
+      post.likedBy.push(userId);
+      post.likesCount += 1;
+
+      // Add notification to post author
+      if (post.userId !== userId) {
+        this.data.notifications.unshift({
+          id: `notif_${Date.now()}`,
+          toUserId: post.userId,
+          fromUserId: userId,
+          type: 'post_like',
+          text: `liked your post: "${post.caption.substring(0, 24)}"`,
+          read: false,
+          relatedPostId: post.id,
+          createdAt: new Date().toISOString(),
+        });
+        const author = this.getUserById(post.userId);
+        if (author) author.likesReceived += 1;
+      }
+      this.saveToStorage();
+      return true;
+    }
+    return false; // already liked, so count does not duplicate!
+  }
+
+  // Record a unique view on a post (1 user = 1 view maximum).
+  public recordPostView(postId: string, userId: string): boolean {
+    const post = this.data.posts.find((p) => p.id === postId);
+    if (!post) return false;
+
+    if (!post.viewedBy) {
+      post.viewedBy = [];
+    }
+    if (typeof post.viewsCount !== 'number') {
+      post.viewsCount = post.viewedBy.length;
+    }
+
+    if (!post.viewedBy.includes(userId)) {
+      post.viewedBy.push(userId);
+      post.viewsCount += 1;
+      this.saveToStorage();
+      return true;
+    }
+    return false;
   }
 
   public toggleLikePost(postId: string, userId: string): boolean {
@@ -882,12 +962,19 @@ class OrbitStore {
   public createStory(params: {
     userId: string;
     mediaUrl: string;
+    mediaType?: 'image' | 'video';
     caption?: string;
   }): Story {
+    const isVideo =
+      params.mediaType === 'video' ||
+      params.mediaUrl.startsWith('data:video') ||
+      Boolean(params.mediaUrl.match(/\.(mp4|webm|mov|ogg|m4v)(\?.*)?$/i));
+
     const newStory: Story = {
       id: `story_${Date.now()}`,
       userId: params.userId,
       mediaUrl: params.mediaUrl,
+      mediaType: isVideo ? 'video' : 'image',
       caption: params.caption,
       createdAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 86400000).toISOString(), // 24 hours

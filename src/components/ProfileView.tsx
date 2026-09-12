@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { User, Post } from '../types';
 import { store } from '../services/store';
+import { useLongPress } from '../hooks/useLongPress';
+import { AvatarPreviewModal } from './AvatarPreviewModal';
 import {
   Grid,
   Bookmark,
@@ -36,6 +38,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'posts' | 'saved'>('posts');
   const [showSocialList, setShowSocialList] = useState<'followers' | 'following' | null>(null);
+  const [showAvatarZoom, setShowAvatarZoom] = useState(false);
 
   const isMe = user.id === currentUser.id;
   const posts = store.getPostsByUser(user.id);
@@ -46,6 +49,20 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   const followStatus = store.getFollowStatus(currentUser.id, user.id);
   const privacyCheck = store.canSendMessage(currentUser.id, user.id);
+
+  const avatarLongPressProps = useLongPress({
+    threshold: 320,
+    onLongPress: () => setShowAvatarZoom(true),
+    onClick: () => {
+      if (hasActiveStory) {
+        // Active story view
+      } else if (isMe) {
+        onOpenCreateStory();
+      } else {
+        setShowAvatarZoom(true);
+      }
+    },
+  });
 
   const displayedPosts = activeTab === 'posts' ? posts : savedPosts;
 
@@ -59,29 +76,32 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   return (
     <div className="w-full flex flex-col space-y-5 pb-24 animate-in fade-in duration-200">
+      {/* Full-screen DP view on hold */}
+      {showAvatarZoom && (
+        <AvatarPreviewModal
+          user={user}
+          onClose={() => setShowAvatarZoom(false)}
+        />
+      )}
+
       {/* Profile Header Card */}
       <div className="flex flex-col items-center text-center pt-2">
         {/* Avatar with gradient story ring & heart count badge */}
         <div className="relative mb-3">
           <div
-            onClick={() => {
-              if (hasActiveStory) {
-                // View story
-              } else if (isMe) {
-                onOpenCreateStory();
-              }
-            }}
-            className={`w-24 h-24 rounded-full p-[3px] cursor-pointer transition-transform hover:scale-105 ${
+            {...avatarLongPressProps}
+            className={`w-24 h-24 rounded-full p-[3px] cursor-pointer transition-transform hover:scale-105 active:scale-95 ${
               hasActiveStory
                 ? 'bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 shadow-[0_0_20px_rgba(168,85,247,0.4)]'
                 : 'bg-slate-800'
             }`}
+            title="Hold to view enlarged profile picture"
           >
             <div className="w-full h-full rounded-full bg-[#0c0f17] p-1 overflow-hidden">
               <img
                 src={user.avatar}
                 alt={user.displayName}
-                className="w-full h-full rounded-full object-cover"
+                className="w-full h-full rounded-full object-cover select-none"
               />
             </div>
           </div>

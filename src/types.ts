@@ -20,6 +20,7 @@ export interface Story {
   id: string;
   userId: string;
   mediaUrl: string;
+  mediaType?: 'image' | 'video';
   caption?: string;
   createdAt: string;
   expiresAt: string;
@@ -45,6 +46,8 @@ export interface Post {
   savedBy: string[]; // user IDs
   visibility?: 'everyone' | 'friends';
   allowComments?: boolean;
+  viewsCount?: number;
+  viewedBy?: string[]; // unique user IDs who have viewed this post
   createdAt: string;
 }
 

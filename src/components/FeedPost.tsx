@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Heart,
   MessageCircle,
@@ -14,9 +14,12 @@ import {
   Check,
   Share2,
   X,
+  Eye,
 } from 'lucide-react';
 import { Post, User } from '../types';
 import { store } from '../services/store';
+import { useLongPress } from '../hooks/useLongPress';
+import { AvatarPreviewModal } from './AvatarPreviewModal';
 
 interface FeedPostProps {
   post: Post;
@@ -32,6 +35,19 @@ export const FeedPost: React.FC<FeedPostProps> = ({
   onOpenChatWith,
 }) => {
   const author = store.getUserById(post.userId);
+  const displayAuthor: User = author || {
+    id: post.userId,
+    username: 'user',
+    displayName: 'Orbit User',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+    bio: '',
+    followersCount: 0,
+    followingCount: 0,
+    postsCount: 1,
+    likesReceived: 0,
+    createdAt: new Date().toISOString(),
+  };
+
   const isAuthor = post.userId === currentUser.id;
   const isLiked = post.likedBy.includes(currentUser.id);
   const isSaved = post.savedBy.includes(currentUser.id);
@@ -39,6 +55,7 @@ export const FeedPost: React.FC<FeedPostProps> = ({
   const [commentText, setCommentText] = useState('');
   const [showComments, setShowComments] = useState(false);
   const [showHeartOverlay, setShowHeartOverlay] = useState(false);
+  const [showAvatarZoom, setShowAvatarZoom] = useState(false);
 
   // 3-dot menu state
   const [showMenu, setShowMenu] = useState(false);
@@ -48,6 +65,13 @@ export const FeedPost: React.FC<FeedPostProps> = ({
   // Share modal state
   const [showShareModal, setShowShareModal] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Record unique view on this post: "ak user ka ak hi view"
+  useEffect(() => {
+    if (currentUser?.id && post?.id) {
+      store.recordPostView(post.id, currentUser.id);
+    }
+  }, [post.id, currentUser?.id]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -68,13 +92,37 @@ export const FeedPost: React.FC<FeedPostProps> = ({
     store.toggleLikePost(post.id, currentUser.id);
   };
 
+  // Double-tap or double-click to like:
+  // "or age 2 time click kare tu ak like bhare ak user ak hi like kar Sakta hai"
   const handleDoubleTap = () => {
-    if (!isLiked) {
-      store.toggleLikePost(post.id, currentUser.id);
-    }
+    store.likePostOnce(post.id, currentUser.id);
     setShowHeartOverlay(true);
-    setTimeout(() => setShowHeartOverlay(false), 800);
+    setTimeout(() => setShowHeartOverlay(false), 850);
   };
+
+  // Touch double-tap handler for mobile screens
+  const lastTapRef = useRef<number>(0);
+  const handleTouchMedia = () => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 320) {
+      handleDoubleTap();
+      lastTapRef.current = 0;
+    } else {
+      lastTapRef.current = now;
+    }
+  };
+
+  // Hold profile picture to enlarge:
+  // "agar koi profile image par click kar ke rakhena tu profile pic her bhari ho kar screen par open ho"
+  const avatarLongPressProps = useLongPress({
+    threshold: 320,
+    onLongPress: () => {
+      setShowAvatarZoom(true);
+    },
+    onClick: () => {
+      if (onOpenUser) onOpenUser(displayAuthor.id);
+    },
+  });
 
   const handleSave = () => {
     store.toggleSavePost(post.id, currentUser.id);
@@ -123,10 +171,18 @@ export const FeedPost: React.FC<FeedPostProps> = ({
     showToast('Link copied to clipboard! 📋');
   };
 
-  if (!author) return null;
+  const totalViews = post.viewsCount ?? post.viewedBy?.length ?? 0;
 
   return (
     <article className="w-full bg-[#12151e] border border-slate-800/80 rounded-2xl overflow-hidden mb-4 shadow-lg transition-all relative">
+      {/* Enlarged Avatar Modal when user clicks & holds profile image */}
+      {showAvatarZoom && (
+        <AvatarPreviewModal
+          user={displayAuthor}
+          onClose={() => setShowAvatarZoom(false)}
+        />
+      )}
+
       {/* Toast Feedback */}
       {toastMessage && (
         <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 px-3 py-1.5 rounded-xl bg-indigo-600/90 text-white text-xs font-semibold shadow-lg backdrop-blur-md animate-in fade-in slide-in-from-top-2">
@@ -136,21 +192,29 @@ export const FeedPost: React.FC<FeedPostProps> = ({
 
       {/* Post Header */}
       <div className="p-3 sm:px-4 flex items-center justify-between">
-        <div
-          onClick={() => onOpenUser && onOpenUser(author.id)}
-          className="flex items-center space-x-2.5 cursor-pointer group"
-        >
-          <img
-            src={author.avatar}
-            alt={author.displayName}
-            className="w-9 h-9 rounded-full object-cover border border-slate-700/80 group-hover:border-indigo-500/60 transition-colors"
-          />
-          <div>
+        <div className="flex items-center space-x-2.5">
+          {/* Avatar with click-and-hold to enlarge DP: "profile image par click kar ke rakhena tu profile pic her bhari ho kar screen par open ho" */}
+          <div
+            {...avatarLongPressProps}
+            className="cursor-pointer group relative active:scale-95 transition-transform select-none"
+            title="Hold to view enlarged profile picture"
+          >
+            <img
+              src={displayAuthor.avatar}
+              alt={displayAuthor.displayName}
+              className="w-9 h-9 rounded-full object-cover border border-slate-700/80 group-hover:border-indigo-500/60 transition-colors"
+            />
+          </div>
+
+          <div
+            onClick={() => onOpenUser && onOpenUser(displayAuthor.id)}
+            className="cursor-pointer group"
+          >
             <div className="flex items-center gap-1.5">
               <span className="text-xs sm:text-sm font-semibold text-slate-100 group-hover:text-indigo-300 transition-colors">
-                {author.username}
+                {displayAuthor.username}
               </span>
-              {author.isVerified && (
+              {displayAuthor.isVerified && (
                 <span className="w-3.5 h-3.5 rounded-full bg-indigo-500 text-white flex items-center justify-center text-[8px] font-bold">
                   ✓
                 </span>
@@ -239,9 +303,11 @@ export const FeedPost: React.FC<FeedPostProps> = ({
         </div>
       </div>
 
-      {/* Post Media Container with Double-tap */}
+      {/* Post Media Container with Double-tap / 2-time click to like */}
+      {/* "or age 2 time click kare tu ak like bhare ak user ak hi like kar Sakta hai" */}
       <div
         onDoubleClick={handleDoubleTap}
+        onTouchEnd={handleTouchMedia}
         className="relative w-full aspect-square sm:aspect-[4/3] bg-black overflow-hidden select-none cursor-pointer flex items-center justify-center"
       >
         <img
@@ -313,9 +379,21 @@ export const FeedPost: React.FC<FeedPostProps> = ({
           </button>
         </div>
 
-        {/* Likes Count */}
-        <div className="text-xs font-bold text-slate-200">
-          {post.likesCount} {post.likesCount === 1 ? 'like' : 'likes'}
+        {/* Likes Count & Views Count Row */}
+        {/* "post par idar neeche chuta se views bhi show ho ak user ka ak hi view" */}
+        <div className="flex items-center justify-between text-xs text-slate-200">
+          <span className="font-bold">
+            {post.likesCount} {post.likesCount === 1 ? 'like' : 'likes'}
+          </span>
+          <div
+            className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400 bg-slate-800/60 px-2 py-0.5 rounded-full border border-slate-700/60"
+            title={`${totalViews} unique view${totalViews === 1 ? '' : 's'}`}
+          >
+            <Eye className="w-3.5 h-3.5 text-slate-400" />
+            <span>
+              {totalViews} {totalViews === 1 ? 'view' : 'views'}
+            </span>
+          </div>
         </div>
 
         {/* Caption or Edit Caption Form */}
@@ -350,10 +428,10 @@ export const FeedPost: React.FC<FeedPostProps> = ({
           post.caption && (
             <div className="text-xs text-slate-300 leading-relaxed">
               <span
-                onClick={() => onOpenUser && onOpenUser(author.id)}
+                onClick={() => onOpenUser && onOpenUser(displayAuthor.id)}
                 className="font-bold text-white mr-1.5 cursor-pointer hover:underline"
               >
-                {author.username}
+                {displayAuthor.username}
               </span>
               <span>{post.caption}</span>
             </div>

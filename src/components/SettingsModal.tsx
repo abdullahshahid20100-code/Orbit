@@ -12,6 +12,11 @@ import {
   AlertTriangle,
   Globe,
   UserCheck,
+  KeyRound,
+  Eye,
+  EyeOff,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { User } from '../types';
 import { store } from '../services/store';
@@ -42,9 +47,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const [savedSuccess, setSavedSuccess] = useState(false);
 
+  // Change Password state
+  const [showChangePass, setShowChangePass] = useState(false);
+  const [currentPass, setCurrentPass] = useState('');
+  const [newPass, setNewPass] = useState('');
+  const [confirmPass, setConfirmPass] = useState('');
+  const [showCurrentPass, setShowCurrentPass] = useState(false);
+  const [showNewPass, setShowNewPass] = useState(false);
+  const [showConfirmPass, setShowConfirmPass] = useState(false);
+  const [passError, setPassError] = useState<string | null>(null);
+  const [passSuccess, setPassSuccess] = useState<string | null>(null);
+
   // Delete account confirmation states
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
+  const [showDeletePass, setShowDeletePass] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const allUsers = store.getUsers();
@@ -61,6 +78,39 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     });
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 2000);
+  };
+
+  const handleChangePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPassError(null);
+    setPassSuccess(null);
+
+    if (!currentPass.trim()) {
+      setPassError('Please enter your current password');
+      return;
+    }
+    if (newPass.length < 4) {
+      setPassError('New password must be at least 4 characters');
+      return;
+    }
+    if (newPass !== confirmPass) {
+      setPassError('New passwords do not match');
+      return;
+    }
+
+    const res = store.changePassword(currentUser.id, currentPass, newPass);
+    if (res.success) {
+      setPassSuccess('Password updated successfully!');
+      setCurrentPass('');
+      setNewPass('');
+      setConfirmPass('');
+      setTimeout(() => {
+        setPassSuccess(null);
+        setShowChangePass(false);
+      }, 1500);
+    } else {
+      setPassError(res.error || 'Failed to update password');
+    }
   };
 
   const handleConfirmDelete = (e: React.FormEvent) => {
@@ -256,7 +306,125 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
 
-          {/* 4. Logout Action */}
+          {/* 4. Change Password ("setting Mai na change password ka option bhi ho or password par na eye ka icon ho") */}
+          <div className="space-y-2">
+            <div className="flex items-center space-x-2 text-slate-200 font-bold tracking-wide uppercase text-[11px]">
+              <KeyRound className="w-4 h-4 text-indigo-400" />
+              <span>Password & Security</span>
+            </div>
+
+            <div className="bg-[#141824] p-3 rounded-2xl border border-slate-800/80">
+              <button
+                type="button"
+                onClick={() => setShowChangePass(!showChangePass)}
+                className="w-full flex items-center justify-between text-left py-1"
+              >
+                <div className="flex items-center space-x-2">
+                  <Lock className="w-3.5 h-3.5 text-indigo-400" />
+                  <span className="font-semibold text-white text-xs">Change Password</span>
+                </div>
+                {showChangePass ? (
+                  <ChevronUp className="w-4 h-4 text-slate-400" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-slate-400" />
+                )}
+              </button>
+
+              {showChangePass && (
+                <form onSubmit={handleChangePasswordSubmit} className="mt-3 space-y-2.5 pt-2 border-t border-slate-800">
+                  {/* Current Password */}
+                  <div>
+                    <label className="text-[11px] text-slate-400 block mb-1">Current Password</label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+                      <input
+                        type={showCurrentPass ? 'text' : 'password'}
+                        required
+                        placeholder="Enter current password"
+                        value={currentPass}
+                        onChange={(e) => setCurrentPass(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700/80 rounded-xl pl-8 pr-10 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowCurrentPass(!showCurrentPass)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5"
+                        title={showCurrentPass ? 'Hide password' : 'Show password'}
+                      >
+                        {showCurrentPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* New Password */}
+                  <div>
+                    <label className="text-[11px] text-slate-400 block mb-1">New Password</label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+                      <input
+                        type={showNewPass ? 'text' : 'password'}
+                        required
+                        placeholder="At least 4 characters"
+                        value={newPass}
+                        onChange={(e) => setNewPass(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700/80 rounded-xl pl-8 pr-10 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPass(!showNewPass)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5"
+                        title={showNewPass ? 'Hide password' : 'Show password'}
+                      >
+                        {showNewPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Confirm New Password */}
+                  <div>
+                    <label className="text-[11px] text-slate-400 block mb-1">Confirm New Password</label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+                      <input
+                        type={showConfirmPass ? 'text' : 'password'}
+                        required
+                        placeholder="Re-enter new password"
+                        value={confirmPass}
+                        onChange={(e) => setConfirmPass(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700/80 rounded-xl pl-8 pr-10 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPass(!showConfirmPass)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5"
+                        title={showConfirmPass ? 'Hide password' : 'Show password'}
+                      >
+                        {showConfirmPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {passError && (
+                    <p className="text-[11px] text-rose-400 font-medium">{passError}</p>
+                  )}
+                  {passSuccess && (
+                    <p className="text-[11px] text-emerald-400 font-medium flex items-center gap-1">
+                      <Check className="w-3.5 h-3.5" /> {passSuccess}
+                    </p>
+                  )}
+
+                  <button
+                    type="submit"
+                    className="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition-colors shadow-md"
+                  >
+                    Update Password
+                  </button>
+                </form>
+              )}
+            </div>
+          </div>
+
+          {/* 5. Logout Action */}
           <div>
             <button
               onClick={() => {
@@ -270,7 +438,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </button>
           </div>
 
-          {/* 5. Danger Zone: Permanent Account Deletion with Password */}
+          {/* 6. Danger Zone: Permanent Account Deletion with Password */}
           <div className="pt-2 border-t border-slate-800/80">
             {!showDeleteConfirm ? (
               <button
@@ -296,15 +464,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                   <input
-                    type="password"
+                    type={showDeletePass ? 'text' : 'password'}
                     placeholder="Enter password..."
                     value={deletePassword}
                     onChange={(e) => {
                       setDeletePassword(e.target.value);
                       setDeleteError(null);
                     }}
-                    className="w-full bg-slate-900 border border-rose-500/50 rounded-xl pl-8 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-400"
+                    className="w-full bg-slate-900 border border-rose-500/50 rounded-xl pl-8 pr-10 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-400"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowDeletePass(!showDeletePass)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5"
+                    title={showDeletePass ? 'Hide password' : 'Show password'}
+                  >
+                    {showDeletePass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
                 </div>
 
                 {deleteError && (

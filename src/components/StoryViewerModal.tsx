@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Heart, Send, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Heart, Send, ChevronLeft, ChevronRight, Volume2, VolumeX, Film } from 'lucide-react';
 import { Story, User } from '../types';
 import { store } from '../services/store';
 
@@ -25,13 +25,22 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
   });
   const [progress, setProgress] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [replyStatus, setReplyStatus] = useState<string | null>(null);
   const [showHeartAnim, setShowHeartAnim] = useState(false);
 
+  const videoRef = useRef<HTMLVideoElement>(null);
+
   const currentStory = stories[currentIndex];
   const author = currentStory ? store.getUserById(currentStory.userId) : null;
   const hasLiked = currentStory?.likedBy.includes(currentUser.id) || false;
+
+  const isVideo = Boolean(
+    currentStory?.mediaType === 'video' ||
+    currentStory?.mediaUrl?.startsWith('data:video') ||
+    currentStory?.mediaUrl?.match(/\.(mp4|webm|mov|ogg|m4v)(\?.*)?$/i)
+  );
 
   // Safe fallback if story or author is deleted/missing
   useEffect(() => {
@@ -43,11 +52,25 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
   // Reset progress on index change
   useEffect(() => {
     setProgress(0);
+    if (videoRef.current) {
+      videoRef.current.currentTime = 0;
+      videoRef.current.play().catch(() => {});
+    }
   }, [currentIndex]);
 
-  // Story progress timer (5 seconds per story)
+  // Sync video play/pause with isPaused state
   useEffect(() => {
-    if (isPaused || !currentStory) return;
+    if (!videoRef.current || !isVideo) return;
+    if (isPaused) {
+      videoRef.current.pause();
+    } else {
+      videoRef.current.play().catch(() => {});
+    }
+  }, [isPaused, isVideo]);
+
+  // Story progress timer for images (or fallback if video duration unavailable)
+  useEffect(() => {
+    if (isPaused || !currentStory || isVideo) return;
 
     const step = 50; // ms
     const totalDuration = 5000; // 5s
@@ -60,18 +83,32 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
     return () => {
       clearInterval(timer);
     };
-  }, [currentIndex, isPaused, currentStory]);
+  }, [currentIndex, isPaused, currentStory, isVideo]);
 
-  // Advance to next story or close when progress reaches 100%
+  // Handle video progress updates
+  const handleVideoTimeUpdate = () => {
+    if (!videoRef.current) return;
+    const dur = videoRef.current.duration;
+    if (dur && dur > 0) {
+      const cur = videoRef.current.currentTime;
+      setProgress(Math.min((cur / dur) * 100, 100));
+    }
+  };
+
+  const handleVideoEnded = () => {
+    handleNextStory();
+  };
+
+  // Advance to next story or close when progress reaches 100% (for images)
   useEffect(() => {
-    if (progress >= 100) {
+    if (!isVideo && progress >= 100) {
       if (currentIndex < stories.length - 1) {
         setCurrentIndex((i) => i + 1);
       } else {
         onClose();
       }
     }
-  }, [progress, currentIndex, stories.length, onClose]);
+  }, [progress, currentIndex, stories.length, onClose, isVideo]);
 
   const handleNextStory = () => {
     setProgress(0);
@@ -162,7 +199,7 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
           })}
         </div>
 
-        {/* Story Author Header */}
+        {/* Story Author Header & Video Controls */}
         <div className="absolute top-6 left-3 right-3 z-30 flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
             <img
@@ -174,29 +211,64 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
               <span className="text-white text-sm font-semibold drop-shadow-md">
                 {author.username}
               </span>
-              <span className="text-white/70 text-xs drop-shadow-md">5h</span>
+              <span className="text-white/70 text-xs drop-shadow-md">24h</span>
+              {isVideo && (
+                <span className="px-1.5 py-0.5 rounded bg-indigo-600/80 text-[10px] text-white font-bold flex items-center gap-1 shadow">
+                  <Film className="w-2.5 h-2.5" /> VIDEO
+                </span>
+              )}
             </div>
           </div>
 
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onClose();
-            }}
-            className="p-1.5 rounded-full bg-black/40 text-white/90 hover:text-white hover:bg-black/60 transition-colors"
-            title="Close story"
-          >
-            <X className="w-5 h-5 stroke-[2.5]" />
-          </button>
+          <div className="flex items-center space-x-1.5">
+            {/* Mute/Unmute for Video */}
+            {isVideo && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsMuted(!isMuted);
+                }}
+                className="p-1.5 rounded-full bg-black/40 text-white/90 hover:text-white hover:bg-black/60 transition-colors"
+                title={isMuted ? 'Unmute' : 'Mute'}
+              >
+                {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+              </button>
+            )}
+
+            {/* Close button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onClose();
+              }}
+              className="p-1.5 rounded-full bg-black/40 text-white/90 hover:text-white hover:bg-black/60 transition-colors"
+              title="Close story"
+            >
+              <X className="w-5 h-5 stroke-[2.5]" />
+            </button>
+          </div>
         </div>
 
         {/* Media Viewport */}
         <div className="relative flex-1 w-full bg-black flex items-center justify-center overflow-hidden">
-          <img
-            src={currentStory.mediaUrl}
-            alt="Story media"
-            className="w-full h-full object-contain"
-          />
+          {isVideo ? (
+            <video
+              ref={videoRef}
+              src={currentStory.mediaUrl}
+              autoPlay
+              playsInline
+              muted={isMuted}
+              onTimeUpdate={handleVideoTimeUpdate}
+              onEnded={handleVideoEnded}
+              className="w-full h-full object-contain"
+            />
+          ) : (
+            <img
+              src={currentStory.mediaUrl}
+              alt="Story media"
+              className="w-full h-full object-contain"
+            />
+          )}
 
           {/* Double tap / Like heart burst */}
           {showHeartAnim && (
