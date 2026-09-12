@@ -45,8 +45,26 @@ export const SAMPLE_ASSETS = {
     'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1000&q=80',
 };
 
-// Initial Users: empty by default so ONLY real accounts created by users appear
-const INITIAL_USERS: User[] = [];
+// Primary Default Account (Abdullah Shahid)
+export const DEFAULT_PRIMARY_USER: User = {
+  id: 'usr_abdullah',
+  username: 'abdullahshahid',
+  displayName: 'Abdullah Shahid',
+  avatar: SAMPLE_ASSETS.abdullahPhoto,
+  bio: 'Hi / Exploring the orbit ✨',
+  password: 'orbit123',
+  followersCount: 0,
+  followingCount: 0,
+  postsCount: 1,
+  likesReceived: 2,
+  isVerified: true,
+  postVisibility: 'everyone',
+  allowComments: true,
+  createdAt: new Date(Date.now() - 86400000 * 30).toISOString(),
+};
+
+// Initial Users: contains the primary account so the app never gets stuck in an empty state on reload
+const INITIAL_USERS: User[] = [DEFAULT_PRIMARY_USER];
 
 // Initial Seed Posts (Matching Abdullah Shahid's ZHAM post in video)
 const INITIAL_POSTS: Post[] = [
@@ -235,20 +253,38 @@ class OrbitStore {
           // Remove seed dummy accounts (usr_shahid, usr_elena, usr_marcus)
           // so ONLY REAL user IDs created in Orbit are present!
           const DUMMY_SEED_IDS = new Set(['usr_shahid', 'usr_elena', 'usr_marcus']);
-          parsed.users = parsed.users.filter((u: User) => {
-            if (u.id === parsed.currentUserId) return true;
-            return !DUMMY_SEED_IDS.has(u.id);
-          });
+          parsed.users = parsed.users.filter((u: User) => !DUMMY_SEED_IDS.has(u.id));
+
+          // If no users exist, ensure the primary account (Abdullah Shahid) is available
+          if (parsed.users.length === 0) {
+            parsed.users = [DEFAULT_PRIMARY_USER];
+          }
+
+          // Ensure valid currentUserId (never left as null when users exist)
+          if (!parsed.currentUserId || !parsed.users.some((u: User) => u.id === parsed.currentUserId)) {
+            parsed.currentUserId = parsed.users[0].id;
+          }
 
           // Ensure all posts have visibility, viewsCount, and viewedBy initialized
-          if (Array.isArray(parsed.posts)) {
+          if (Array.isArray(parsed.posts) && parsed.posts.length > 0) {
             parsed.posts.forEach((p: Post) => {
               if (!p.visibility) p.visibility = 'everyone';
               if (p.allowComments === undefined) p.allowComments = true;
               if (!p.viewedBy) p.viewedBy = [];
               if (typeof p.viewsCount !== 'number') p.viewsCount = p.viewedBy.length;
             });
+          } else {
+            parsed.posts = [...INITIAL_POSTS];
           }
+
+          if (!Array.isArray(parsed.stories) || parsed.stories.length === 0) {
+            parsed.stories = [...INITIAL_STORIES];
+          }
+          if (!Array.isArray(parsed.highlights)) parsed.highlights = [...INITIAL_HIGHLIGHTS];
+          if (!Array.isArray(parsed.followRequests)) parsed.followRequests = [];
+          if (!Array.isArray(parsed.notifications)) parsed.notifications = [];
+          if (!Array.isArray(parsed.conversations)) parsed.conversations = [];
+          if (!Array.isArray(parsed.messages)) parsed.messages = [];
 
           return parsed;
         }
@@ -257,17 +293,17 @@ class OrbitStore {
       // ignore
     }
 
-    // Clean initial state: no dummy data
+    // Default persistent initial state with Abdullah Shahid as the primary active account
     return {
-      users: [],
-      posts: [],
-      stories: [],
+      users: [DEFAULT_PRIMARY_USER],
+      posts: [...INITIAL_POSTS],
+      stories: [...INITIAL_STORIES],
       followRequests: [],
       notifications: [],
       conversations: [],
       messages: [],
-      highlights: [],
-      currentUserId: null,
+      highlights: [...INITIAL_HIGHLIGHTS],
+      currentUserId: DEFAULT_PRIMARY_USER.id,
     };
   }
 
@@ -290,30 +326,35 @@ class OrbitStore {
   }
 
   public hasAccount(): boolean {
-    return Boolean(this.data.currentUserId);
+    return Boolean(this.data.currentUserId && this.data.users.length > 0);
   }
 
   public resetToCleanState() {
-    localStorage.removeItem(STORAGE_KEY);
-    this.data = {
-      users: [],
-      posts: [],
-      stories: [],
-      followRequests: [],
-      notifications: [],
-      conversations: [],
-      messages: [],
-      highlights: [],
-      currentUserId: null,
-    };
+    // When logging out or resetting, reset back to primary account instead of leaving app broken
+    this.data.currentUserId = this.data.users.length > 0 ? this.data.users[0].id : DEFAULT_PRIMARY_USER.id;
+    if (this.data.users.length === 0) {
+      this.data.users = [DEFAULT_PRIMARY_USER];
+    }
     this.saveToStorage();
   }
 
   // --- Current User Management ---
   public getCurrentUser(): User | null {
-    if (!this.data.currentUserId) return null;
+    if (!this.data.currentUserId) {
+      if (this.data.users.length > 0) {
+        this.data.currentUserId = this.data.users[0].id;
+        this.saveToStorage();
+        return this.data.users[0];
+      }
+      return null;
+    }
     const user = this.data.users.find((u) => u.id === this.data.currentUserId);
-    return user || (this.data.users.length > 0 ? this.data.users[0] : null);
+    if (!user && this.data.users.length > 0) {
+      this.data.currentUserId = this.data.users[0].id;
+      this.saveToStorage();
+      return this.data.users[0];
+    }
+    return user || null;
   }
 
   public setCurrentUser(userId: string) {
@@ -321,6 +362,24 @@ class OrbitStore {
       this.data.currentUserId = userId;
       this.saveToStorage();
     }
+  }
+
+  // --- Login with Username & Password ---
+  public login(
+    username: string,
+    password?: string
+  ): { success: boolean; user?: User; error?: string } {
+    const clean = username.trim().toLowerCase().replace(/^@/, '');
+    const user = this.data.users.find((u) => u.username.toLowerCase() === clean);
+    if (!user) {
+      return { success: false, error: `No account found with username @${clean}` };
+    }
+    if (user.password && password && user.password.trim() !== password.trim()) {
+      return { success: false, error: 'Incorrect password for this account' };
+    }
+    this.data.currentUserId = user.id;
+    this.saveToStorage();
+    return { success: true, user };
   }
 
   public getUsers(): User[] {

@@ -312,7 +312,7 @@ export default function App() {
           onLogout={() => {
             setShowSettingsModal(false);
             store.resetToCleanState();
-            setCurrentUser(null);
+            setCurrentUser(store.getCurrentUser());
           }}
           onAccountDeleted={() => {
             setShowSettingsModal(false);
